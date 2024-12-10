@@ -15,6 +15,7 @@ from src.utils.chrome_utils import chrome_browser_options
 
 from src.job_application_profile import JobApplicationProfile
 from src.logging import logger
+from src.creat_resume_by_jd import start_create_resume
 
 # Suppress stderr only during specific operations
 original_stderr = sys.stderr
@@ -177,22 +178,36 @@ def create_and_run_bot(parameters, llm_api_key):
             resume_generator_manager.choose_style()
         
         job_application_profile_object = JobApplicationProfile(plain_text_resume)
+
+        if parameters['createMode']:
+            logger.info('Creating Resume')
+            job = ConfigValidator.validate_yaml_file(parameters['createYamlPath'])
+            start_create_resume(resume_generator_manager, job)
         
-        browser = init_browser()
-        login_component = get_authenticator(driver=browser, platform='linkedin')
-        apply_component = AIHawkJobManager(browser)
-        gpt_answerer_component = GPTAnswerer(parameters, llm_api_key)
-        bot = AIHawkBotFacade(login_component, apply_component)
-        bot.set_job_application_profile_and_resume(job_application_profile_object, resume_object)
-        bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, resume_generator_manager)
-        bot.set_parameters(parameters)
-        bot.start_login()
-        if (parameters['collectMode'] == True):
-            logger.info('Collecting')
-            bot.start_collect_data()
         else:
-            logger.info('Applying')
-            bot.start_apply()
+            # # 初始化瀏覽器和相關組件
+            browser = init_browser()
+            login_component = get_authenticator(driver=browser, platform='linkedin')
+            apply_component = AIHawkJobManager(browser)
+            gpt_answerer_component = GPTAnswerer(parameters, llm_api_key)
+            
+            # 建立和設定機器人
+            bot = AIHawkBotFacade(login_component, apply_component)
+            bot.set_job_application_profile_and_resume(job_application_profile_object, resume_object)
+            bot.set_gpt_answerer_and_resume_generator(gpt_answerer_component, resume_generator_manager)
+            bot.set_parameters(parameters)
+            
+            # 開始登入
+            bot.start_login()
+            
+            # 根據模式執行收集或申請功能
+            if (parameters['collectMode'] == True):
+                logger.info('Collecting')
+                bot.start_collect_data()
+            else:
+                logger.info('Applying')
+                bot.start_apply()
+            
     except WebDriverException as e:
         logger.error(f"WebDriver error occurred: {e}")
     except Exception as e:
@@ -202,7 +217,8 @@ def create_and_run_bot(parameters, llm_api_key):
 @click.command()
 @click.option('--resume', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path), help="Path to the resume PDF file")
 @click.option('--collect', is_flag=True, help="Only collects data job information into data.json file")
-def main(collect: bool = False, resume: Optional[Path] = None):
+@click.option('--create', type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path), help="Path to the YAML file to create a new resume")
+def main(collect: bool = False, resume: Optional[Path] = None, create: Optional[Path] = None):
     try:
         data_folder = Path("data_folder")
         secrets_file, config_file, plain_text_resume_file, output_folder = FileManager.validate_data_folder(data_folder)
@@ -213,6 +229,8 @@ def main(collect: bool = False, resume: Optional[Path] = None):
         parameters['uploads'] = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
         parameters['outputFileDirectory'] = output_folder
         parameters['collectMode'] = collect
+        parameters['createMode'] = create is not None
+        parameters['createYamlPath'] = create
         
         create_and_run_bot(parameters, llm_api_key)
     except ConfigError as ce:

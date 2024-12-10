@@ -89,7 +89,7 @@ class AIHawkJobManager:
 
     def start_collecting_data(self):
         searches = list(product(self.positions, self.locations))
-        random.shuffle(searches)
+        # random.shuffle(searches)
         page_sleep = 0
         minimum_time = 60 * 5
         minimum_page_time = time.time() + minimum_time
@@ -137,7 +137,7 @@ class AIHawkJobManager:
         self.easy_applier_component = AIHawkEasyApplier(self.driver, self.resume_path, self.set_old_answers,
                                                           self.gpt_answerer, self.resume_generator_manager)
         searches = list(product(self.positions, self.locations))
-        random.shuffle(searches)
+        # random.shuffle(searches)
         page_sleep = 0
         minimum_time = MINIMUM_WAIT_TIME_IN_SECONDS
         minimum_page_time = time.time() + minimum_time
@@ -254,7 +254,8 @@ class AIHawkJobManager:
 
         try:
             # XPath query to find the ul tag with class scaffold-layout__list-container
-            jobs_xpath_query = "//ul[contains(@class, 'scaffold-layout__list-container')]"
+            # jobs_xpath_query = "//ul[contains(@class, 'scaffold-layout__list-container')]"
+            jobs_xpath_query = "//div[contains(@class, 'scaffold-layout__list')]/div[1]/ul[1]"
             jobs_container = self.driver.find_element(By.XPATH, jobs_xpath_query)
 
             if scroll:
@@ -264,7 +265,8 @@ class AIHawkJobManager:
                 browser_utils.scroll_slow(self.driver, jobs_container_scrolableElement)
                 browser_utils.scroll_slow(self.driver, jobs_container_scrolableElement, step=300, reverse=True)
 
-            job_element_list = jobs_container.find_elements(By.XPATH, ".//li[contains(@class, 'jobs-search-results__list-item') and contains(@class, 'ember-view')]")
+            job_element_list = jobs_container.find_elements(By.XPATH, ".//li[contains(@class, 'ember-view')]")
+            # job_element_list = jobs_container.find_elements(By.XPATH, ".//li[contains(@class, 'jobs-search-results__list-item') and contains(@class, 'ember-view')]")
 
             if not job_element_list:
                 logger.debug("No job class elements found on page, skipping.")
@@ -282,7 +284,7 @@ class AIHawkJobManager:
 
     def read_jobs(self):
 
-        job_element_list = self.get_jobs_from_page()
+        job_element_list = self.get_jobs_from_page(scroll=True)
         job_list = [self.job_tile_to_job(job_element) for job_element in job_element_list] 
         for job in job_list:            
             if self.is_blacklisted(job.title, job.company, job.link, job.location):
@@ -371,6 +373,7 @@ class AIHawkJobManager:
                 self.write_to_file(job, "skipped", "Already applied to this company")
                 continue
             try:
+                # TODO: 根據應徵後的實際內容再做調整
                 if job.apply_method not in {"Continue", "Applied", "Apply"}:
                     self.easy_applier_component.job_apply(job)
                     self.write_to_file(job, "success")
@@ -379,6 +382,7 @@ class AIHawkJobManager:
                 logger.error(f"Failed to apply for {job.title} at {job.company}: {e}",exc_info=True)
                 self.write_to_file(job, "failed", f"Application error: {str(e)}")
                 continue
+            break
 
     def write_to_file(self, job : Job, file_name, reason=None):
         logger.debug(f"Writing job application result to file: {file_name}")
@@ -461,13 +465,13 @@ class AIHawkJobManager:
         job = Job()
 
         try:
-            job.title = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').find_element(By.TAG_NAME, 'strong').text
+            job.title = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title--link').find_element(By.TAG_NAME, 'strong').text
             logger.debug(f"Job title extracted: {job.title}")
         except NoSuchElementException:
             logger.warning("Job title is missing.")
         
         try:
-            job.link = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').get_attribute('href').split('?')[0]
+            job.link = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title--link').get_attribute('href').split('?')[0]
             logger.debug(f"Job link extracted: {job.link}")
         except NoSuchElementException:
             logger.warning("Job link is missing.")
@@ -490,18 +494,19 @@ class AIHawkJobManager:
             logger.warning(f"Failed to extract job ID: {e}", exc_info=True)
 
         try:
-            job.location = job_tile.find_element(By.CLASS_NAME, 'job-card-container__metadata-item').text
+            job.location = job_tile.find_element(By.CLASS_NAME, 'artdeco-entity-lockup__caption').text
         except NoSuchElementException:
             logger.warning("Job location is missing.")
         
 
+        # FIXME: 再調整這裡的搜尋條件
         try:
             job_state = job_tile.find_element(By.XPATH, ".//ul[contains(@class, 'job-card-list__footer-wrapper')]//li[contains(@class, 'job-card-container__apply-method')]").text
         except NoSuchElementException as e:
             try:
                 # Fetching state when apply method is not found
                 job_state = job_tile.find_element(By.XPATH, ".//ul[contains(@class, 'job-card-list__footer-wrapper')]//li[contains(@class, 'job-card-container__footer-job-state')]").text
-                job.apply_method = "Applied"
+                job.apply_method = job_state # "Applied"
                 logger.warning(f'Apply method not found, state {job_state}. {e} {traceback.format_exc()}')
             except NoSuchElementException as e:
                 logger.warning(f'Apply method and state not found. {e} {traceback.format_exc()}')

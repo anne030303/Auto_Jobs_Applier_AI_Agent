@@ -32,6 +32,8 @@ share/python-wheels/
 *.egg
 MANIFEST
 chrome_profile/*
+data_folder/*.yaml
+data_folder/jd
 data_folder/output/*
 answers.json
 # PyInstaller
